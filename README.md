@@ -223,6 +223,8 @@ updated: 2026-04-25
 ---
 ```
 
+The YAML key "class" allow to select quickly the corresponding script
+
 **YAML keys**
 
 | Key | Source | Editable |
