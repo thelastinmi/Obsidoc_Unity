@@ -879,6 +879,15 @@ namespace Obsi.Doc.Editor
             // Header bar: filename + Edit + Rendered toggles
             EditorGUILayout.BeginHorizontal(EditorStyles.toolbar);
             EditorGUILayout.LabelField(Path.GetFileName(_selectedFile), EditorStyles.boldLabel);
+            Rect titleRect = GUILayoutUtility.GetLastRect();
+            EditorGUIUtility.AddCursorRect(titleRect, MouseCursor.Link);
+            if (Event.current.type == EventType.MouseDown
+                && Event.current.button == 0
+                && titleRect.Contains(Event.current.mousePosition))
+            {
+                PingCorrespondingScript();
+                Event.current.Use();
+            }
             GUILayout.FlexibleSpace();
             bool newEdit = GUILayout.Toggle(_editMode, "Edit", EditorStyles.toolbarButton, GUILayout.Width(50));
             if (newEdit != _editMode)
@@ -1471,6 +1480,49 @@ namespace Obsi.Doc.Editor
                     _isDraggingSplit = false;
                     break;
             }
+        }
+
+        // ── Script ping ───────────────────────────────────────────────────────
+
+        private void PingCorrespondingScript()
+        {
+            string className = GetClassNameFromFrontmatter();
+            if (string.IsNullOrEmpty(className)) return;
+
+            string[] guids = AssetDatabase.FindAssets($"t:MonoScript {className}");
+            foreach (string guid in guids)
+            {
+                string path   = AssetDatabase.GUIDToAssetPath(guid);
+                var    script = AssetDatabase.LoadAssetAtPath<MonoScript>(path);
+                if (script != null && script.name == className)
+                {
+                    Selection.activeObject = script;
+                    EditorGUIUtility.PingObject(script);
+                    return;
+                }
+            }
+        }
+
+        private string GetClassNameFromFrontmatter()
+        {
+            if (_parsedBlocks == null) return null;
+            var fm = _parsedBlocks.FirstOrDefault(b => b.Type == BlockType.Frontmatter);
+            if (fm == null) return null;
+
+            foreach (string line in fm.RawText.Split('\n'))
+            {
+                string trimmed = line.TrimEnd('\r').Trim();
+                if (!trimmed.StartsWith("class:", StringComparison.Ordinal)) continue;
+
+                string value   = trimmed.Substring("class:".Length).Trim();
+                // Strip generic params: "Singleton<T>" → "Singleton"
+                int generic    = value.IndexOf('<');
+                string basePart = generic >= 0 ? value.Substring(0, generic) : value;
+                // Strip namespace: "MyNamespace.Singleton" → "Singleton"
+                int lastDot    = basePart.LastIndexOf('.');
+                return lastDot >= 0 ? basePart.Substring(lastDot + 1) : basePart;
+            }
+            return null;
         }
 
         // ── Status bar ────────────────────────────────────────────────────────

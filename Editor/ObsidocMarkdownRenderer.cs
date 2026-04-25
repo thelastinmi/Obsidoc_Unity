@@ -217,10 +217,19 @@ namespace Obsi.Doc.Editor
 
             GUILayout.Space(6);
 
-            // Row 2 — class name (large)
+            // Row 2 — class name (large, clickable → ping script)
             EditorGUILayout.BeginHorizontal();
             GUILayout.Space(12);
             GUILayout.Label(className ?? "—", _h1, GUILayout.ExpandWidth(true));
+            Rect classRect = GUILayoutUtility.GetLastRect();
+            EditorGUIUtility.AddCursorRect(classRect, MouseCursor.Link);
+            if (Event.current.type == EventType.MouseDown
+                && Event.current.button == 0
+                && classRect.Contains(Event.current.mousePosition))
+            {
+                PingScript(className);
+                Event.current.Use();
+            }
             GUILayout.Space(12);
             EditorGUILayout.EndHorizontal();
 
@@ -973,6 +982,33 @@ namespace Obsi.Doc.Editor
             if (raw.StartsWith("[") && raw.EndsWith("]"))
                 raw = raw.Substring(1, raw.Length - 2);
             return raw.Split(',');
+        }
+
+        // ── Script ping ───────────────────────────────────────────────────────
+
+        private static void PingScript(string classValue)
+        {
+            if (string.IsNullOrEmpty(classValue)) return;
+            // Strip generics: "Singleton<T>" → "Singleton"
+            int    generic  = classValue.IndexOf('<');
+            string basePart = generic >= 0 ? classValue.Substring(0, generic) : classValue;
+            // Strip namespace: "MyNamespace.Singleton" → "Singleton"
+            int    lastDot  = basePart.LastIndexOf('.');
+            string name     = lastDot >= 0 ? basePart.Substring(lastDot + 1) : basePart;
+            if (string.IsNullOrEmpty(name)) return;
+
+            string[] guids = AssetDatabase.FindAssets($"t:MonoScript {name}");
+            foreach (string guid in guids)
+            {
+                string path   = AssetDatabase.GUIDToAssetPath(guid);
+                var    script = AssetDatabase.LoadAssetAtPath<MonoScript>(path);
+                if (script != null && script.name == name)
+                {
+                    Selection.activeObject = script;
+                    EditorGUIUtility.PingObject(script);
+                    return;
+                }
+            }
         }
 
         // ── Misc helpers ──────────────────────────────────────────────────────

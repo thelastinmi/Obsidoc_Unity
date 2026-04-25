@@ -163,11 +163,11 @@ namespace Obsi.Doc.Editor
             if (settings == null)
             {
                 settings = CreateInstance<ObsidocSettings>();
+                settings.ColorPalette = BuildDefaultPalette();
                 UnityEditor.AssetDatabase.CreateAsset(settings, AssetPath);
                 UnityEditor.AssetDatabase.SaveAssets();
             }
-
-            if (settings.ColorPalette == null || settings.ColorPalette.Count == 0)
+            else if (settings.ColorPalette == null || settings.ColorPalette.Count == 0)
             {
                 settings.ColorPalette = BuildDefaultPalette();
                 UnityEditor.EditorUtility.SetDirty(settings);

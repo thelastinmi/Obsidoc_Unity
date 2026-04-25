@@ -33,10 +33,10 @@ namespace Obsi.Doc.Editor
             Directory.CreateDirectory(outputRoot);
             Directory.CreateDirectory(archiveRoot);
 
-            // Build a lookup: class name → Type
+            // Build a lookup: doc file name → Type (generic suffix stripped, e.g. "Singleton`1" → "Singleton")
             var typeMap = new Dictionary<string, Type>(StringComparer.Ordinal);
             foreach (Type t in scan.Types)
-                typeMap[t.Name] = t;
+                typeMap[GetDocFileName(t)] = t;
 
             var report = new GenerationReport();
 
@@ -52,7 +52,9 @@ namespace Obsi.Doc.Editor
             {
                 foreach (string f in Directory.GetFiles(searchRoot, "*.md", SearchOption.AllDirectories))
                 {
-                    string n = Path.GetFileNameWithoutExtension(f);
+                    string raw = Path.GetFileNameWithoutExtension(f);
+                    int tick   = raw.IndexOf('`');
+                    string n   = tick >= 0 ? raw.Substring(0, tick) : raw;
                     if (!existingFiles.ContainsKey(n))
                         existingFiles[n] = f;
                 }
@@ -64,7 +66,7 @@ namespace Obsi.Doc.Editor
                 var attr = type.GetCustomAttribute<ObsidocAttribute>();
                 if (attr == null) continue;
 
-                if (existingFiles.TryGetValue(type.Name, out string existingPath))
+                if (existingFiles.TryGetValue(GetDocFileName(type), out string existingPath))
                 {
                     // File found somewhere in outputRoot — update it in its current location
                     UpdateFrontmatter(existingPath, type, attr, excludedMethods);
@@ -77,7 +79,7 @@ namespace Obsi.Doc.Editor
                         ? outputRoot
                         : Path.Combine(outputRoot, attr.Category);
                     Directory.CreateDirectory(folder);
-                    string filePath = Path.Combine(folder, $"{type.Name}.md");
+                    string filePath = Path.Combine(folder, $"{GetDocFileName(type)}.md");
                     File.WriteAllText(filePath, BuildMarkdown(type, attr, excludedMethods), Encoding.UTF8);
                     report.Created++;
                 }
@@ -88,7 +90,9 @@ namespace Obsi.Doc.Editor
             {
                 foreach (string mdFile in Directory.GetFiles(outputRoot, "*.md", SearchOption.AllDirectories))
                 {
-                    string className = Path.GetFileNameWithoutExtension(mdFile);
+                    string rawClass = Path.GetFileNameWithoutExtension(mdFile);
+                    int    tickIdx  = rawClass.IndexOf('`');
+                    string className = tickIdx >= 0 ? rawClass.Substring(0, tickIdx) : rawClass;
                     if (!typeMap.ContainsKey(className))
                     {
                         string dest = ResolveArchivePath(archiveRoot, Path.GetFileName(mdFile));
@@ -111,7 +115,7 @@ namespace Obsi.Doc.Editor
             bool includePrivate = type.IsDefined(typeof(ObsidocIncludePrivateAttribute), false);
 
             sb.AppendLine("---");
-            sb.AppendLine($"class: {type.FullName}");
+            sb.AppendLine($"class: {GetDocFullName(type)}");
             sb.AppendLine($"kind: {GetTypeKind(type)}");
             sb.AppendLine($"namespace: {type.Namespace}");
             sb.AppendLine($"category: {attr.Category}");
@@ -192,7 +196,7 @@ namespace Obsi.Doc.Editor
             // Properties sourced from the [Obsidoc] attribute — always authoritative
             var scriptProps = new Dictionary<string, string>(StringComparer.Ordinal)
             {
-                ["class"]     = type.FullName  ?? string.Empty,
+                ["class"]     = GetDocFullName(type),
                 ["kind"]      = GetTypeKind(type),
                 ["namespace"] = type.Namespace ?? string.Empty,
                 ["category"]  = attr.Category,
@@ -540,6 +544,40 @@ namespace Obsi.Doc.Editor
             if (type.IsAbstract)                    return "abstract class";
             if (type.IsSealed)                      return "sealed class";
             return "class";
+        }
+
+        /// <summary>
+        /// Returns the filesystem-safe base name for the .md file.
+        /// Generic CLR suffix stripped: "Singleton`1" → "Singleton".
+        /// </summary>
+        private static string GetDocFileName(Type type)
+        {
+            string name = type.Name;
+            int tick = name.IndexOf('`');
+            return tick >= 0 ? name.Substring(0, tick) : name;
+        }
+
+        /// <summary>
+        /// Returns the human-readable C# short name, including generic type parameters.
+        /// e.g. "Singleton`1" → "Singleton&lt;T&gt;"
+        /// </summary>
+        private static string GetDocShortName(Type type)
+        {
+            if (!type.IsGenericType) return type.Name;
+            string baseName = type.Name;
+            int tick = baseName.IndexOf('`');
+            if (tick >= 0) baseName = baseName.Substring(0, tick);
+            return baseName + "<" + string.Join(", ", type.GetGenericArguments().Select(a => a.Name)) + ">";
+        }
+
+        /// <summary>
+        /// Returns the fully-qualified, human-readable C# name of a type.
+        /// e.g. "MyNamespace.Singleton&lt;T&gt;"
+        /// </summary>
+        private static string GetDocFullName(Type type)
+        {
+            string ns = string.IsNullOrEmpty(type.Namespace) ? string.Empty : type.Namespace + ".";
+            return ns + GetDocShortName(type);
         }
 
         /// <summary>
